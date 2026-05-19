@@ -9,7 +9,11 @@ type Expense = { id: string; category: string; amount: number; note: string; dat
 type SavingsGoal = { id: string; name: string; target: number; current: number; icon: string; };
 type Notification = { id: string; text: string; type: 'info' | 'warning' | 'success'; read: boolean; };
 type AllowanceRequest = { id: string; amount: number; reason: string; status: 'pending' | 'approved' | 'denied'; date: string; };
-type Tab = 'dashboard' | 'expenses' | 'budget' | 'analytics' | 'requests' | 'profile';
+
+type RiskLevel = 'conservative' | 'moderate' | 'aggressive';
+type Demographics = { age: number; income: number; dependents: number; goal: string; occupation: string; };
+type InvestProfile = { risk: RiskLevel; demo: Demographics; answered: boolean; };
+type Tab = 'dashboard' | 'expenses' | 'budget' | 'analytics' | 'requests' | 'profile' | 'invest';
 
 const defaultCategories: Category[] = [
   { id: 'rent', name: 'Monthly Rent', icon: '🏠', color: '#6366f1', budget: 0, spent: 0 },
@@ -64,6 +68,34 @@ const ProgressBar: React.FC<{value: number; max: number; color: string; h?: numb
 const TS = { background: '#1e2636', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '12px', padding: '10px 14px', fontSize: '0.82rem', color: '#f1f5f9' };
 const TAS = { fill: '#64748b', fontSize: 11 };
 const COLORS = ['#6366f1','#22c55e','#8b5cf6','#f59e0b','#06b6d4','#ec4899','#a855f7','#64748b'];
+function getRiskLabel(r: RiskLevel): string { return r.charAt(0).toUpperCase() + r.slice(1); }
+function getRiskEmoji(r: RiskLevel): string { return r === 'conservative' ? '🛡️' : r === 'moderate' ? '⚖️' : '🚀'; }
+function getInvestAdvice(risk: RiskLevel, demo: Demographics) {
+  if (!demo.age) { return {title:'Complete Assessment',desc:'Answer the quiz to get your strategy.',strategy:'',allocations:[] as {name:string,pct:number,color:string,risk:string}[],warnings:[] as string[]}; }
+  if (risk === 'conservative') {
+    return {title:'Conservative Portfolio',desc:'Capital preservation first.',strategy:'Prioritise bonds and money market funds. Keep 6 months expenses in cash.',allocations:[{name:'Bonds / Fixed Income',pct:60,color:'#22c55e',risk:'Low'},{name:'Blue-Chip Stocks',pct:25,color:'#6366f1',risk:'Low-Med'},{name:'Cash Reserve',pct:15,color:'#06b6d4',risk:'Very Low'}],warnings:['Diversify across asset classes.','Consider TIPS for inflation.']};
+  }
+  if (risk === 'moderate') {
+    return {title:'Moderate Growth Portfolio',desc:'Balanced growth with managed risk.',strategy:'50/50 equities and bonds. Dividend aristocrats for stable income.',allocations:[{name:'Index Funds / ETFs',pct:45,color:'#6366f1',risk:'Medium'},{name:'Bonds / Fixed Income',pct:30,color:'#22c55e',risk:'Low'},{name:'REITs / Real Estate',pct:15,color:'#f59e0b',risk:'Medium'},{name:'Cash Reserve',pct:10,color:'#06b6d4',risk:'Very Low'}],warnings:['Rebalance semi-annually.','Dollar-cost average during volatility.']};
+  }
+  return {title:'Aggressive Growth Portfolio',desc:'High-growth for long-term investors.',strategy:'Maximise equity exposure. Long horizon means volatility averages out.',allocations:[{name:'Growth Stocks / Tech',pct:50,color:'#ec4899',risk:'High'},{name:'Emerging Markets',pct:20,color:'#f59e0b',risk:'High'},{name:'S&P 500 Index',pct:20,color:'#6366f1',risk:'Medium'},{name:'Crypto (<=5%)',pct:5,color:'#a855f7',risk:'Very High'},{name:'Cash',pct:5,color:'#06b6d4',risk:'Very Low'}],warnings:['Volatility is normal.','Never invest >5% speculatively.']};
+}
+function calcRiskScore(answers: Array<number | undefined>): number {
+  let sum = 0; let cnt = 0;
+  for (let i = 0; i < answers.length; i++) { const v = answers[i]; if (v !== undefined) { sum = sum + v; cnt = cnt + 1; } }
+  return cnt > 0 ? sum / cnt : 1.5;
+}
+function getAgeInsight(age: number): string {
+  if (age < 35) { return 'At your age you have a long compounding window. Prioritise equity growth funds -- even small monthly contributions compound dramatically over 30+ years.'; }
+  if (age < 50) { return 'Peak earning years. Maximise tax-advantaged accounts and build passive income streams for the future.'; }
+  return 'Shift toward income-generating assets. Focus on capital preservation while maintaining purchasing power.';
+}
+const RISK_QS: Array<{q: string; opts: Array<{label: string; val: number}>}> = [
+  {q:'How do you react when your portfolio drops 20% in a week?',opts:[{label:'Sell everything',val:0},{label:'Hold steady',val:1},{label:'Buy more',val:2}]},
+  {q:'What best describes your investing experience?',opts:[{label:'None',val:0},{label:'1-3 years',val:1},{label:'3+ years',val:2}]},
+  {q:'Which fits you best?',opts:[{label:'Preserve capital only',val:0},{label:'Balanced growth & safety',val:1},{label:'Maximize returns',val:2}]},
+  {q:'When will you need this money?',opts:[{label:'< 2 years',val:0},{label:'2-5 years',val:1},{label:'5+ years',val:2}]},
+];
 
 const Home: NextPage = () => {
   const [tab, setTab] = useState<Tab>('dashboard');
@@ -84,7 +116,11 @@ const Home: NextPage = () => {
   const [notifOpen, setNotifOpen] = useState(false);
   const [showStock, setShowStock] = useState(false);
   const [profileName, setProfileName] = useState(settings.name);
+  
   const [allowanceInput, setAllowanceInput] = useState('');
+  const [invProfile, setInvProfile] = useStorage<InvestProfile>(SK+'inv', {risk:'moderate',demo:{age:0,income:0,dependents:0,goal:'',occupation:''},answered:false});
+  const [riskAns, setRiskAns] = useState<Array<number | undefined>>([]);
+  const [demoFrm, setDemoFrm] = useState({age:'',income:'',dependents:'',goal:'',occupation:''});
 
   const monthExps = expenses.filter(e => e.date?.startsWith(month));
   const totalSpent = monthExps.reduce((s,e) => s+e.amount, 0);
@@ -247,7 +283,7 @@ const Home: NextPage = () => {
           <main>
             {/* TAB BAR */}
             <div style={{ display: 'flex', gap: '6px', marginBottom: '20px', background: 'rgba(255,255,255,0.04)', borderRadius: '16px', padding: '6px', border: '1px solid rgba(255,255,255,0.06)', overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
-              {([['dashboard','📊','Dashboard'],['expenses','💳','Expenses'],['budget','🎯','Budget'],['analytics','📈','Analytics'],['requests','📬','Requests'],['profile','👤','Profile']] as [Tab,string,string][]).map(([t,icon,label]) => (
+              {([['dashboard','📊','Dashboard'],['expenses','💳','Expenses'],['budget','🎯','Budget'],['analytics','📈','Analytics'],['requests','📬','Requests'],['profile','👤','Profile'],['invest','💹','Invest']] as [Tab,string,string][]).map(([t,icon,label]) => (
                 <motion.button key={t} whileHover={{ scale: 1.03 }} whileTap={{ scale: 0.97 }}
                   onClick={() => setTab(t)}
                   style={{ flex: 1, minWidth: '70px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', padding: '9px 8px', borderRadius: '12px', border: 'none', cursor: 'pointer', fontSize: '0.78rem', fontWeight: '600', transition: 'all 0.2s', background: tab === t ? 'rgba(99,102,241,0.22)' : 'transparent', color: tab === t ? '#a5b4fc' : '#475569' }}>
@@ -706,6 +742,167 @@ const Home: NextPage = () => {
               <div style={{ fontSize: '0.7rem', color: '#475569', marginTop: '8px', textAlign: 'center' }}>Powered by Yahoo Finance</div>
             </GlassCard>
           </aside>
+
+        {tab === 'invest' && (
+          <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} style={{ display: 'flex', flexDirection: 'column', gap: '18px' }}>
+
+            {/* Risk Assessment Quiz */}
+            <GlassCard>
+              <div style={{ fontSize: '0.95rem', fontWeight: '700', marginBottom: '14px' }}>Risk Assessment Quiz</div>
+              {!invProfile.answered ? (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                  <div style={{ fontSize: '0.82rem', color: '#64748b', lineHeight: '1.5' }}>Answer the questions to discover your investor profile and get a personalised strategy aligned to your demographics and risk tolerance.</div>
+                  {RISK_QS.map((rq, qi) => (
+                    <div key={qi}>
+                      <div style={{ fontSize: '0.85rem', fontWeight: '600', marginBottom: '8px' }}>{qi+1}. {rq.q}</div>
+                      <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                        {rq.opts.map((opt, oi) => (
+                          <motion.button key={oi} whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.97 }}
+                            onClick={() => { const na = [...riskAns]; na[qi] = opt.val; setRiskAns(na); }}
+                            style={{ padding: '8px 14px', background: riskAns[qi] === opt.val ? 'rgba(99,102,241,0.28)' : 'rgba(255,255,255,0.05)', border: '1px solid ' + (riskAns[qi] === opt.val ? 'rgba(99,102,241,0.45)' : 'rgba(255,255,255,0.1)'), borderRadius: '10px', color: riskAns[qi] === opt.val ? '#a5b4fc' : '#94a3b8', cursor: 'pointer', fontSize: '0.8rem', fontWeight: '600' }}>
+                            {opt.label}
+                          </motion.button>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+
+                  <div style={{ fontSize: '0.95rem', fontWeight: '700', marginBottom: '8px', marginTop: '4px' }}>Your Profile</div>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+                    <div>
+                      <label style={{ display: 'block', fontSize: '0.7rem', color: '#64748b', marginBottom: '4px', textTransform: 'uppercase', letterSpacing: '0.06em', fontWeight: '600' }}>Age</label>
+                      <input value={demoFrm.age} onChange={e => setDemoFrm(f => ({...f, age: e.target.value}))} placeholder="e.g. 28" type="number" min="18" max="100"
+                        style={{ width: '100%', background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.12)', borderRadius: '10px', padding: '9px 12px', color: '#f1f5f9', fontSize: '0.85rem', outline: 'none' }} />
+                    </div>
+                    <div>
+                      <label style={{ display: 'block', fontSize: '0.7rem', color: '#64748b', marginBottom: '4px', textTransform: 'uppercase', letterSpacing: '0.06em', fontWeight: '600' }}>Annual Income ($)</label>
+                      <input value={demoFrm.income} onChange={e => setDemoFrm(f => ({...f, income: e.target.value}))} placeholder="e.g. 65000" type="number" min="0"
+                        style={{ width: '100%', background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.12)', borderRadius: '10px', padding: '9px 12px', color: '#f1f5f9', fontSize: '0.85rem', outline: 'none' }} />
+                    </div>
+                    <div>
+                      <label style={{ display: 'block', fontSize: '0.7rem', color: '#64748b', marginBottom: '4px', textTransform: 'uppercase', letterSpacing: '0.06em', fontWeight: '600' }}>Dependents</label>
+                      <input value={demoFrm.dependents} onChange={e => setDemoFrm(f => ({...f, dependents: e.target.value}))} placeholder="e.g. 2" type="number" min="0"
+                        style={{ width: '100%', background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.12)', borderRadius: '10px', padding: '9px 12px', color: '#f1f5f9', fontSize: '0.85rem', outline: 'none' }} />
+                    </div>
+                    <div>
+                      <label style={{ display: 'block', fontSize: '0.7rem', color: '#64748b', marginBottom: '4px', textTransform: 'uppercase', letterSpacing: '0.06em', fontWeight: '600' }}>Occupation</label>
+                      <input value={demoFrm.occupation} onChange={e => setDemoFrm(f => ({...f, occupation: e.target.value}))} placeholder="e.g. Software Engineer"
+                        style={{ width: '100%', background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.12)', borderRadius: '10px', padding: '9px 12px', color: '#f1f5f9', fontSize: '0.85rem', outline: 'none' }} />
+                    </div>
+                  </div>
+                  <div>
+                    <label style={{ display: 'block', fontSize: '0.7rem', color: '#64748b', marginBottom: '4px', textTransform: 'uppercase', letterSpacing: '0.06em', fontWeight: '600' }}>Primary Financial Goal</label>
+                    <input value={demoFrm.goal} onChange={e => setDemoFrm(f => ({...f, goal: e.target.value}))} placeholder="e.g. Financial freedom, Retire at 55, Buy a home"
+                      style={{ width: '100%', background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.12)', borderRadius: '10px', padding: '9px 12px', color: '#f1f5f9', fontSize: '0.85rem', outline: 'none' }} />
+                  </div>
+                  <motion.button whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}
+                    onClick={() => {
+                      const answered = riskAns.filter(v => v !== undefined).length >= 3;
+                      if (!answered) { addNotif('Please answer at least 3 questions', 'warning'); return; }
+                      const score = calcRiskScore(riskAns);
+                      const risk: RiskLevel = score < 0.8 ? 'conservative' : score < 1.5 ? 'moderate' : 'aggressive';
+                      const demo: Demographics = {age: parseInt(demoFrm.age)||0, income: parseFloat(demoFrm.income)||0, dependents: parseInt(demoFrm.dependents)||0, goal: demoFrm.goal, occupation: demoFrm.occupation};
+                      setInvProfile({risk, demo, answered: true});
+                      addNotif('Investment profile saved!', 'success');
+                    }}
+                    disabled={riskAns.filter(v => v !== undefined).length < 3}
+                    style={{ padding: '12px', background: riskAns.filter(v => v !== undefined).length >= 3 ? 'rgba(99,102,241,0.22)' : 'rgba(99,102,241,0.08)', border: '1px solid rgba(99,102,241,0.35)', borderRadius: '12px', color: riskAns.filter(v => v !== undefined).length >= 3 ? '#a5b4fc' : '#475569', cursor: riskAns.filter(v => v !== undefined).length >= 3 ? 'pointer' : 'not-allowed', fontSize: '0.88rem', fontWeight: '700' }}>
+                    Generate My Strategy
+                  </motion.button>
+                </div>
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                      <span style={{ fontSize: '2rem' }}>{getRiskEmoji(invProfile.risk)}</span>
+                      <div>
+                        <div style={{ fontSize: '1rem', fontWeight: '700' }}>{getRiskLabel(invProfile.risk)} Investor</div>
+                        <div style={{ fontSize: '0.75rem', color: '#64748b' }}>{invProfile.demo.age ? 'Age ' + invProfile.demo.age + ' · ' + (invProfile.demo.occupation || 'Professional') : 'Profile complete'}</div>
+                      </div>
+                    </div>
+                    <motion.button whileHover={{ scale: 1.03 }} whileTap={{ scale: 0.97 }}
+                      onClick={() => setInvProfile(p => ({...p, answered: false}))}
+                      style={{ padding: '6px 14px', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '10px', color: '#94a3b8', cursor: 'pointer', fontSize: '0.78rem', fontWeight: '600' }}>
+                      Retake
+                    </motion.button>
+                  </div>
+                  {(() => {
+                    const adv = getInvestAdvice(invProfile.risk, invProfile.demo);
+                    return (
+                      <>
+                        <div style={{ fontSize: '0.88rem', fontWeight: '700', color: '#818cf8' }}>{adv.title}</div>
+                        <div style={{ fontSize: '0.82rem', color: '#94a3b8', lineHeight: '1.5' }}>{adv.desc}</div>
+                        {adv.strategy && <div style={{ padding: '12px', background: 'rgba(99,102,241,0.1)', borderRadius: '12px', fontSize: '0.82rem', color: '#c7d2fe', lineHeight: '1.5', borderLeft: '3px solid #6366f1' }}>{adv.strategy}</div>}
+                      </>
+                    );
+                  })()}
+                </div>
+              )}
+            </GlassCard>
+
+            {/* Portfolio Allocation */}
+            {invProfile.answered && (() => {
+              const adv = getInvestAdvice(invProfile.risk, invProfile.demo);
+              return (
+                <GlassCard>
+                  <div style={{ fontSize: '0.95rem', fontWeight: '700', marginBottom: '14px' }}>Suggested Portfolio Allocation</div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                    {adv.allocations.map((a, i) => (
+                      <div key={i}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '5px' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                            <div style={{ width: '10px', height: '10px', borderRadius: '3px', background: a.color }} />
+                            <span style={{ fontSize: '0.82rem', fontWeight: '600' }}>{a.name}</span>
+                            <span style={{ fontSize: '0.7rem', color: '#64748b', padding: '2px 8px', background: 'rgba(255,255,255,0.05)', borderRadius: '20px' }}>{a.risk}</span>
+                          </div>
+                          <span style={{ fontSize: '0.85rem', fontWeight: '700', color: '#f1f5f9' }}>{a.pct}%</span>
+                        </div>
+                        <ProgressBar value={a.pct} max={100} color={a.color} h={6} />
+                      </div>
+                    ))}
+                  </div>
+                </GlassCard>
+              );
+            })()}
+
+            {/* Age Insight */}
+            {invProfile.answered && invProfile.demo.age > 0 && (
+              <GlassCard>
+                <div style={{ fontSize: '0.95rem', fontWeight: '700', marginBottom: '10px' }}>Age-Based Insight</div>
+                <div style={{ fontSize: '0.82rem', color: '#94a3b8', lineHeight: '1.6' }}>{getAgeInsight(invProfile.demo.age)}</div>
+                {invProfile.demo.income > 0 && (
+                  <div style={{ marginTop: '10px', padding: '10px 12px', background: 'rgba(34,197,94,0.08)', borderRadius: '10px', fontSize: '0.82rem', color: '#86efac', lineHeight: '1.5' }}>
+                    At {fmt(invProfile.demo.income)}/year income, a 15-20% savings rate = {fmt(invProfile.demo.income * 0.17)}/year toward investments.
+                  </div>
+                )}
+              </GlassCard>
+            )}
+
+            {/* Universal Rules */}
+            <GlassCard>
+              <div style={{ fontSize: '0.95rem', fontWeight: '700', marginBottom: '12px' }}>Universal Financial Rules</div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                {['Build a 3-6 month emergency fund before investing.', 'Pay off high-interest debt before investing.', 'Always maintain adequate insurance.', 'Never invest money you cannot leave untouched for 3+ years.', 'Diversify across asset classes.', 'Review portfolio allocation at least once per year.', 'Tax-advantaged accounts (401k, IRA) should be your first priority.'].map((tip, i) => (
+                  <div key={i} style={{ display: 'flex', gap: '10px', alignItems: 'flex-start', fontSize: '0.82rem', color: '#94a3b8', lineHeight: '1.4' }}>
+                    <span style={{ color: '#6366f1', fontWeight: '700', flexShrink: 0 }}>*</span>
+                    <span>{tip}</span>
+                  </div>
+                ))}
+              </div>
+            </GlassCard>
+
+            {/* Market Tracker */}
+            <GlassCard>
+              <div style={{ fontSize: '0.95rem', fontWeight: '700', marginBottom: '10px' }}>Market Tracker</div>
+              <motion.button whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }} onClick={() => setShowStock(true)}
+                style={{ width: '100%', padding: '11px', background: 'rgba(99,102,241,0.15)', border: '1px solid rgba(99,102,241,0.3)', borderRadius: '12px', color: '#a5b4fc', cursor: 'pointer', fontSize: '0.85rem', fontWeight: '700', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}>
+                Open Live Market Tracker
+              </motion.button>
+              <div style={{ fontSize: '0.72rem', color: '#475569', marginTop: '8px', textAlign: 'center' }}>Powered by Yahoo Finance</div>
+            </GlassCard>
+
+          </motion.div>
+        )}
         </div>
       </div>
     </>
