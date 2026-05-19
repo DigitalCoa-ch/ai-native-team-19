@@ -359,6 +359,24 @@ const Home: NextPage = () => {
                 <button style={styles.resetBtn} onClick={clearAll}>Clear All Data</button>
               </div>
             </div>
+
+            {/* Stock Tracker Widget */}
+            <div style={styles.sectionCard}>
+              <h2 style={styles.sectionTitle}>📈 Market Tracker</h2>
+              <p style={styles.stocksSubtitle}>Live market data from Yahoo Finance</p>
+              <iframe
+                src="https://finance.yahoo.com/quote/%5EGSPC?p=%5EGSPC"
+                style={{ border: 'none', width: '100%', height: '420px', borderRadius: '10px', background: '#f8fafc' }}
+                scrolling="yes"
+                title="Yahoo Finance Market Tracker"
+              />
+              <div style={styles.stocksDisclaimer}>Market data provided by Yahoo Finance. Investing involves risk.</div>
+              <div style={styles.quickLinks}>
+                <a href="https://finance.yahoo.com" target="_blank" rel="noopener noreferrer" style={styles.stockLink}>Yahoo Finance ↗</a>
+                <a href="https://finance.yahoo.com/portfolios" target="_blank" rel="noopener noreferrer" style={styles.stockLink}>My Portfolio ↗</a>
+                <a href="https://finance.yahoo.com/markets" target="_blank" rel="noopener noreferrer" style={styles.stockLink}>Markets ↗</a>
+              </div>
+            </div>
           </div>
         </div>
 
@@ -444,6 +462,10 @@ const styles: Record<string, React.CSSProperties> = {
   resetBtn: { padding: '9px 20px', background: 'transparent', border: '1.5px solid #d8e2ec', borderRadius: '10px', color: '#6b7d93', cursor: 'pointer', fontSize: '0.85rem', fontWeight: '600', transition: 'all 0.15s' },
   footer: { textAlign: 'center', padding: '24px 16px', borderTop: '2px solid #d8e2ec', marginTop: '8px' },
   footerLink: { color: '#3b6ea5', textDecoration: 'none', fontWeight: '500' },
+  stocksSubtitle: { fontSize: '0.8rem', color: '#6b7d93', marginBottom: '12px', marginTop: '-8px' },
+  stocksDisclaimer: { fontSize: '0.72rem', color: '#6b7d93', textAlign: 'center', marginTop: '10px', fontStyle: 'italic' },
+  quickLinks: { display: 'flex', gap: '8px', justifyContent: 'center', marginTop: '12px', flexWrap: 'wrap' },
+  stockLink: { padding: '7px 14px', background: '#e8f0fb', color: '#3b6ea5', borderRadius: '8px', fontSize: '0.82rem', fontWeight: '600', textDecoration: 'none', transition: 'opacity 0.15s', border: '1px solid #d8e2ec' },
 };
 
 export default Home;
