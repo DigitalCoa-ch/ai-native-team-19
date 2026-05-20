@@ -238,6 +238,59 @@ const Home: NextPage = () => {
   const saveProfile = () => { setSettings((s: any) => ({ ...s, name: profileName })); addNotif('Profile saved', 'success'); };
   const pendingReqs = reqs.filter(r => r.status === 'pending');
 
+  const FINANCIAL_TIPS = [
+    'The 50/30/20 rule: allocate 50% to needs, 30% to wants, and 20% to savings and debt repayment.',
+    'Pay yourself first — set aside savings before spending on anything else.',
+    'An emergency fund of 3–6 months expenses protects you from unexpected income disruptions.',
+    'Compound interest is your greatest wealth-building tool. Start investing early, even small amounts.',
+    'Track every expense for one month — most people are surprised where their money actually goes.',
+    'High-interest debt (e.g. credit cards) should be eliminated before investing.',
+    'Avoid lifestyle inflation when you get a raise — direct the difference to savings.',
+    'Review your budget monthly and adjust category limits based on actual spending patterns.',
+    'Tax-advantaged accounts (3a pillar in Switzerland) should be maximized before taxable investing.',
+    'Insurance is not an expense — it is risk transfer. Ensure you are not over- or under-insured.',
+    'Bills that stay the same each month (subscriptions, rent) are easier to budget than variable ones.',
+    'A financial plan without milestones is just a wish list. Set specific, time-bound money goals.',
+    'In investing, volatility is not risk — a bad financial plan is the real risk.',
+  ];
+  const getDailyTip = () => { const idx = now.getDate() % FINANCIAL_TIPS.length; return FINANCIAL_TIPS[idx]; };
+
+  const getFinancialAlerts = () => {
+    const alerts: Array<{type:'danger'|'warning'|'success'; icon: string; title: string; body: string; action?: string}> = [];
+    if (moneyLeft < 0) alerts.push({ type: 'danger', icon: '🚨', title: 'Overspending Alert', body: 'You have exceeded your monthly allowance by ' + fmt(Math.abs(moneyLeft)) + '. Review recent expenses.', action: 'Review Expenses' });
+    else if (moneyLeft < allowance * 0.1) alerts.push({ type: 'warning', icon: '⚠️', title: 'Low Balance Warning', body: 'Only ' + fmt(moneyLeft) + ' left this month. Reign in discretionary spending.', action: 'Check Budget' });
+    if (totalSpent > allowance) alerts.push({ type: 'danger', icon: '💸', title: 'Over Budget', body: 'You spent ' + fmt(totalSpent) + ' against an allowance of ' + fmt(allowance) + '.', action: 'View Breakdown' });
+    goals.forEach(g => {
+      const pct = (g.current / g.target) * 100;
+      if (pct < 25 && g.target > 200) alerts.push({ type: 'warning', icon: '📉', title: g.name + ' Lagging', body: 'Only ' + pct.toFixed(0) + '% saved. Consider increasing monthly contributions.', action: 'Add Funds' });
+    });
+    if (invProfile.answered && invProfile.demo.age && invProfile.risk === 'aggressive' && invProfile.demo.age > 55) alerts.push({ type: 'warning', icon: '📊', title: 'Portfolio Review Suggested', body: 'An aggressive allocation may not suit all life stages. Consider a mid-term review.', action: 'Retake Assessment' });
+    if (pendingReqs.length > 0) alerts.push({ type: 'success', icon: '✅', title: 'Pending Requests', body: pendingReqs.length + ' allowance request(s) awaiting review.', action: 'Review Requests' });
+    if (alerts.length === 0) alerts.push({ type: 'success', icon: '✅', title: 'All Clear', body: 'No financial issues detected. Your finances look healthy!' });
+    return alerts;
+  };
+
+  const getDashboardNews = () => [
+    { headline: 'Swiss National Bank Holds Policy Rate Steady at 1.75%', source: 'SRF Economy', time: '2h ago', sentiment: 'neutral' as const },
+    { headline: 'S&P 500 Edges Higher as Tech Earnings Season Kicks Off', source: 'Reuters', time: '4h ago', sentiment: 'positive' as const },
+    { headline: 'Geneva Inflation Eases to 1.4% in April — Lowest in Two Years', source: 'BFS / Federal Stats Office', time: '6h ago', sentiment: 'positive' as const },
+    { headline: 'UBS and Credit Suisse Integration on Track, CEO Confirms', source: 'NZZ', time: '1d ago', sentiment: 'neutral' as const },
+    { headline: 'CHF Strength Pressures Swiss Exporters — Watch Q2 Reports', source: 'SWI', time: '1d ago', sentiment: 'negative' as const },
+  ];
+
+  const getQuickAiAdvice = () => {
+    const tips: string[] = [];
+    const catOverspend = categories.filter(c => c.budget > 0 && c.spent > c.budget);
+    if (catOverspend.length > 0) tips.push('You are over budget in ' + catOverspend.map(c => c.name).join(', ') + '. Consider setting stricter limits in the Budget tab.');
+    if (moneyLeft > allowance * 0.3) tips.push('You have ' + fmt(moneyLeft) + ' remaining — consider moving excess into savings goals.');
+    if (safeDaily > 50) tips.push('Your daily safe spending (' + fmt(safeDaily) + ') is healthy. Managing discretionary expenses well.');
+    if (!invProfile.answered) tips.push('Complete the risk assessment in the Invest tab for a personalised portfolio strategy.');
+    const nearGoal = goals.find(g => { const pct = (g.current / g.target) * 100; return pct >= 80 && pct < 100; });
+    if (nearGoal) tips.push('You are ' + (nearGoal.current / nearGoal.target * 100).toFixed(0) + '% toward your ' + nearGoal.name + ' goal — almost there!');
+    if (tips.length === 0) tips.push('Your finances are in good shape. Stay consistent and review your budget monthly.');
+    return tips;
+  };
+
   const genevaStores = [
     { name: 'Migros', icon: 'M', location: 'Rive', distance: '0.8km' },
     { name: 'Coop', icon: 'C', location: 'Jonction', distance: '1.1km' },
@@ -467,86 +520,173 @@ const Home: NextPage = () => {
             </div>
 
             {tab === 'dashboard' && (
-              <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} style={{ display: 'flex', flexDirection: 'column', gap: '18px' }}>
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: '14px' }}>
+              <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+
+                {/* WELCOME HEADER */}
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '12px' }}>
+                  <div>
+                    <div style={{ fontSize: '1.5rem', fontWeight: '800', color: '#f1f5f9', letterSpacing: '-0.02em' }}>
+                      Good {new Date().getHours() < 12 ? 'morning' : new Date().getHours() < 17 ? 'afternoon' : 'evening'}, {settings.name}
+                    </div>
+                    <div style={{ fontSize: '0.82rem', color: '#64748b', marginTop: '4px' }}>
+                      {new Date().toLocaleDateString('en-CH', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })} &nbsp;·&nbsp; {month}
+                    </div>
+                  </div>
+                  <div style={{ display: 'flex', gap: '8px' }}>
+                    <motion.button whileHover={{ scale: 1.03 }} whileTap={{ scale: 0.97 }} onClick={() => setTab('expenses')} style={{ padding: '8px 14px', background: 'rgba(99,102,241,0.15)', border: '1px solid rgba(99,102,241,0.25)', borderRadius: '10px', color: '#a5b4fc', cursor: 'pointer', fontSize: '0.8rem', fontWeight: '600', display: 'flex', alignItems: 'center', gap: '6px' }}><span>💳</span><span>Expenses</span></motion.button>
+                    <motion.button whileHover={{ scale: 1.03 }} whileTap={{ scale: 0.97 }} onClick={() => setTab('budget')} style={{ padding: '8px 14px', background: 'rgba(99,102,241,0.15)', border: '1px solid rgba(99,102,241,0.25)', borderRadius: '10px', color: '#a5b4fc', cursor: 'pointer', fontSize: '0.8rem', fontWeight: '600', display: 'flex', alignItems: 'center', gap: '6px' }}><span>🎯</span><span>Budget</span></motion.button>
+                    <motion.button whileHover={{ scale: 1.03 }} whileTap={{ scale: 0.97 }} onClick={() => setTab('invest')} style={{ padding: '8px 14px', background: 'rgba(99,102,241,0.15)', border: '1px solid rgba(99,102,241,0.25)', borderRadius: '10px', color: '#a5b4fc', cursor: 'pointer', fontSize: '0.8rem', fontWeight: '600', display: 'flex', alignItems: 'center', gap: '6px' }}><span>📈</span><span>Invest</span></motion.button>
+                  </div>
+                </div>
+
+                {/* KPI CARDS */}
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '12px' }}>
                   <GlassCard style={{ borderLeft: '3px solid #6366f1' }}>
-                    <div style={{ fontSize: '0.65rem', color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.08em', fontWeight: '600' }}>Monthly Allowance</div>
-                    <div style={{ fontSize: '1.65rem', fontWeight: '800', color: '#818cf8', marginTop: '6px' }}>{fmt(allowance)}</div>
+                    <div style={{ fontSize: '0.62rem', color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.08em', fontWeight: '600', marginBottom: '6px' }}>Monthly Allowance</div>
+                    <div style={{ fontSize: '1.5rem', fontWeight: '800', color: '#818cf8' }}>{fmt(allowance)}</div>
+                    <div style={{ fontSize: '0.68rem', color: '#475569', marginTop: '4px' }}>{daysLeft} days remaining</div>
                   </GlassCard>
                   <GlassCard style={{ borderLeft: '3px solid ' + (totalSpent > allowance ? '#ef4444' : '#22c55e') }}>
-                    <div style={{ fontSize: '0.65rem', color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.08em', fontWeight: '600' }}>Spent This Month</div>
-                    <div style={{ fontSize: '1.65rem', fontWeight: '800', color: totalSpent > allowance ? '#ef4444' : '#f1f5f9', marginTop: '6px' }}>{fmt(totalSpent)}</div>
+                    <div style={{ fontSize: '0.62rem', color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.08em', fontWeight: '600', marginBottom: '6px' }}>Spent This Month</div>
+                    <div style={{ fontSize: '1.5rem', fontWeight: '800', color: totalSpent > allowance ? '#ef4444' : '#f1f5f9' }}>{fmt(totalSpent)}</div>
+                    <div style={{ fontSize: '0.68rem', color: '#475569', marginTop: '4px' }}>{allowance > 0 ? ((totalSpent/allowance)*100).toFixed(0) : 0}% of budget</div>
                   </GlassCard>
-                  <GlassCard style={{ borderLeft: '3px solid ' + (moneyLeft < 0 ? '#ef4444' : '#06b6d4') }}>
-                    <div style={{ fontSize: '0.65rem', color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.08em', fontWeight: '600' }}>Balance Left</div>
-                    <div style={{ fontSize: '1.65rem', fontWeight: '800', color: moneyLeft < 0 ? '#ef4444' : '#f1f5f9', marginTop: '6px' }}>{fmt(moneyLeft)}</div>
+                  <GlassCard style={{ borderLeft: '3px solid ' + (moneyLeft < 0 ? '#ef4444' : moneyLeft < allowance * 0.2 ? '#f59e0b' : '#06b6d4') }}>
+                    <div style={{ fontSize: '0.62rem', color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.08em', fontWeight: '600', marginBottom: '6px' }}>Balance Left</div>
+                    <div style={{ fontSize: '1.5rem', fontWeight: '800', color: moneyLeft < 0 ? '#ef4444' : moneyLeft < allowance * 0.2 ? '#f59e0b' : '#f1f5f9' }}>{fmt(moneyLeft)}</div>
+                    <div style={{ fontSize: '0.68rem', color: '#475569', marginTop: '4px' }}>~{fmt(safeDaily)}/day safe</div>
                   </GlassCard>
-                  <GlassCard>
-                    <div style={{ fontSize: '0.65rem', color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.08em', fontWeight: '600' }}>Safe Daily</div>
-                    <div style={{ fontSize: '1.65rem', fontWeight: '800', color: '#06b6d4', marginTop: '6px' }}>{fmt(safeDaily)}</div>
-                    <div style={{ fontSize: '0.68rem', color: '#475569', marginTop: '4px' }}>{daysLeft} days left</div>
+                  <GlassCard style={{ borderLeft: '3px solid #8b5cf6' }}>
+                    <div style={{ fontSize: '0.62rem', color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.08em', fontWeight: '600', marginBottom: '6px' }}>Savings Goals</div>
+                    <div style={{ fontSize: '1.5rem', fontWeight: '800', color: '#c4b5fd' }}>{goals.length}</div>
+                    <div style={{ fontSize: '0.68rem', color: '#475569', marginTop: '4px' }}>active goals</div>
                   </GlassCard>
                 </div>
 
-                <GlassCard>
-                  <div style={{ fontSize: '0.88rem', fontWeight: '700', marginBottom: '12px' }}>Set Monthly Allowance</div>
-                  <div style={{ display: 'flex', gap: '10px' }}>
-                    <input value={allowanceInput} onChange={e => setAllowanceInput(e.target.value)} onKeyDown={e => e.key === 'Enter' && setAllowanceFromInput()}
-                      placeholder="$0.00" type="number" min="0" step="0.01"
-                      style={{ flex: 1, background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.12)', borderRadius: '12px', padding: '10px 14px', color: '#f1f5f9', fontSize: '0.9rem', outline: 'none' }} />
-                    <motion.button whileHover={{ scale: 1.03 }} whileTap={{ scale: 0.97 }} onClick={setAllowanceFromInput}
-                      style={{ padding: '10px 20px', background: 'rgba(99,102,241,0.25)', border: '1px solid rgba(99,102,241,0.4)', borderRadius: '12px', color: '#a5b4fc', cursor: 'pointer', fontSize: '0.85rem', fontWeight: '700', whiteSpace: 'nowrap' }}>
-                      Update
-                    </motion.button>
-                  </div>
-                </GlassCard>
-
-                <GlassCard>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
-                    <div style={{ fontSize: '0.95rem', fontWeight: '700' }}>Savings Goals</div>
-                    <div style={{ fontSize: '0.75rem', color: '#64748b' }}>{goals.length} active</div>
-                  </div>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-                    {goals.map(g => {
-                      const pct = Math.min((g.current / g.target) * 100, 100);
-                      return (
-                        <div key={g.id}>
-                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '7px' }}>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                              <span>{g.icon}</span>
-                              <span style={{ fontSize: '0.85rem', fontWeight: '600' }}>{g.name}</span>
-                            </div>
-                            <div style={{ fontSize: '0.8rem', color: '#64748b' }}>{fmt(g.current)} <span style={{color:'#334155'}}>/</span> {fmt(g.target)}</div>
-                          </div>
-                          <ProgressBar value={g.current} max={g.target} color={pct >= 100 ? '#22c55e' : '#6366f1'} />
-                        </div>
-                      );
-                    })}
-                  </div>
-                </GlassCard>
-
-                <GlassCard>
-                  <div style={{ marginBottom: '14px', fontSize: '0.95rem', fontWeight: '700' }}>Recent Transactions</div>
-                  {recentExps.length === 0 ? (
-                    <div style={{ textAlign: 'center', padding: '28px', color: '#475569', fontSize: '0.85rem' }}>No transactions this month</div>
-                  ) : (
+                {/* FINANCIAL ALERTS */}
+                {(() => {
+                  const alerts = getFinancialAlerts();
+                  return (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                      {recentExps.map(exp => {
-                        const cat = categories.find(c => c.id === exp.category);
+                      <div style={{ fontSize: '0.8rem', fontWeight: '700', color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '2px' }}>Financial Alerts</div>
+                      {alerts.map((alert, i) => (
+                        <div key={i} style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '12px 16px', background: alert.type === 'danger' ? 'rgba(239,68,68,0.1)' : alert.type === 'warning' ? 'rgba(245,158,11,0.1)' : 'rgba(34,197,94,0.07)', border: '1px solid ' + (alert.type === 'danger' ? 'rgba(239,68,68,0.25)' : alert.type === 'warning' ? 'rgba(245,158,11,0.25)' : 'rgba(34,197,94,0.2)'), borderRadius: '12px' }}>
+                          <span style={{ fontSize: '1.1rem' }}>{alert.icon}</span>
+                          <div style={{ flex: 1 }}>
+                            <div style={{ fontSize: '0.85rem', fontWeight: '700', color: alert.type === 'danger' ? '#fca5a5' : alert.type === 'warning' ? '#fcd34d' : '#86efac' }}>{alert.title}</div>
+                            <div style={{ fontSize: '0.78rem', color: '#94a3b8', marginTop: '2px' }}>{alert.body}</div>
+                          </div>
+                          {alert.action && (
+                            <motion.button whileTap={{ scale: 0.97 }} onClick={() => setTab(alert.action === 'Review Expenses' ? 'expenses' : alert.action === 'Check Budget' ? 'budget' : alert.action === 'Add Funds' ? 'dashboard' : 'requests')}
+                              style={{ padding: '5px 12px', background: 'rgba(255,255,255,0.07)', border: '1px solid rgba(255,255,255,0.12)', borderRadius: '8px', color: '#94a3b8', cursor: 'pointer', fontSize: '0.75rem', fontWeight: '600', whiteSpace: 'nowrap' }}>
+                              {alert.action}
+                            </motion.button>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  );
+                })()}
+
+                {/* DAILY TIP + MARKET NEWS */}
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px' }}>
+                  <GlassCard>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '10px' }}>
+                      <span style={{ fontSize: '1rem' }}>💡</span>
+                      <div style={{ fontSize: '0.8rem', fontWeight: '700', color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.08em' }}>Daily Financial Tip</div>
+                    </div>
+                    <div style={{ fontSize: '0.85rem', color: '#cbd5e1', lineHeight: '1.6' }}>{getDailyTip()}</div>
+                  </GlassCard>
+                  <GlassCard>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '10px' }}>
+                      <span style={{ fontSize: '1rem' }}>📰</span>
+                      <div style={{ fontSize: '0.8rem', fontWeight: '700', color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.08em' }}>Market News</div>
+                    </div>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                      {getDashboardNews().map((n, i) => (
+                        <div key={i} style={{ display: 'flex', gap: '8px', alignItems: 'flex-start' }}>
+                          <span style={{ color: n.sentiment === 'positive' ? '#4ade80' : n.sentiment === 'negative' ? '#f87171' : '#94a3b8', fontSize: '0.7rem', marginTop: '2px', flexShrink: 0 }}>{n.sentiment === 'positive' ? '▲' : n.sentiment === 'negative' ? '▼' : '─'}</span>
+                          <div style={{ flex: 1 }}>
+                            <div style={{ fontSize: '0.8rem', color: '#cbd5e1', lineHeight: '1.4' }}>{n.headline}</div>
+                            <div style={{ fontSize: '0.68rem', color: '#475569', marginTop: '2px' }}>{n.source} · {n.time}</div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </GlassCard>
+                </div>
+
+                {/* AI RECOMMENDATIONS */}
+                <GlassCard style={{ borderTop: '2px solid rgba(99,102,241,0.3)' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '14px' }}>
+                    <span style={{ fontSize: '1rem' }}>🤖</span>
+                    <div style={{ fontSize: '0.85rem', fontWeight: '700', color: '#a5b4fc' }}>AI Insights</div>
+                    <div style={{ marginLeft: 'auto', fontSize: '0.7rem', color: '#64748b', background: 'rgba(245,158,11,0.1)', padding: '2px 8px', borderRadius: '6px', border: '1px solid rgba(245,158,11,0.2)' }}>Simulated · Verify before acting</div>
+                  </div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                    {getQuickAiAdvice().map((tip, i) => (
+                      <div key={i} style={{ display: 'flex', gap: '10px', alignItems: 'flex-start', padding: '10px 12px', background: 'rgba(99,102,241,0.06)', borderRadius: '10px', border: '1px solid rgba(99,102,241,0.1)' }}>
+                        <span style={{ color: '#818cf8', fontSize: '0.75rem', marginTop: '1px', flexShrink: 0 }}>→</span>
+                        <span style={{ fontSize: '0.83rem', color: '#c7d2fe', lineHeight: '1.5' }}>{tip}</span>
+                      </div>
+                    ))}
+                  </div>
+                </GlassCard>
+
+                {/* SAVINGS GOALS + RECENT TRANSACTIONS */}
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px' }}>
+                  <GlassCard>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px' }}>
+                      <div style={{ fontSize: '0.88rem', fontWeight: '700' }}>Savings Goals</div>
+                      <div style={{ fontSize: '0.72rem', color: '#64748b' }}>{goals.length} active</div>
+                    </div>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+                      {goals.map(g => {
+                        const pct = Math.min((g.current / g.target) * 100, 100);
                         return (
-                          <div key={exp.id} style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '10px 12px', background: 'rgba(255,255,255,0.03)', borderRadius: '12px' }}>
-                            <span style={{ fontSize: '1.3rem' }}>{cat?.icon}</span>
-                            <div style={{ flex: 1, minWidth: 0 }}>
-                              <div style={{ fontSize: '0.85rem', fontWeight: '600', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{cat?.name}</div>
-                              <div style={{ fontSize: '0.72rem', color: '#64748b', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{exp.note || exp.date}</div>
+                          <div key={g.id}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '7px' }}>
+                                <span>{g.icon}</span>
+                                <span style={{ fontSize: '0.82rem', fontWeight: '600' }}>{g.name}</span>
+                              </div>
+                              <div style={{ fontSize: '0.78rem', color: '#64748b' }}>{pct.toFixed(0)}%</div>
                             </div>
-                            <div style={{ fontSize: '0.88rem', fontWeight: '700', color: '#f1f5f9', whiteSpace: 'nowrap' }}>{fmt(exp.amount)}</div>
+                            <ProgressBar value={g.current} max={g.target} color={pct >= 100 ? '#22c55e' : '#6366f1'} />
+                            <div style={{ fontSize: '0.72rem', color: '#475569', marginTop: '4px' }}>{fmt(g.current)} / {fmt(g.target)}</div>
                           </div>
                         );
                       })}
                     </div>
-                  )}
-                </GlassCard>
+                  </GlassCard>
+
+                  <GlassCard>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+                      <div style={{ fontSize: '0.88rem', fontWeight: '700' }}>Recent Transactions</div>
+                      <motion.button whileTap={{ scale: 0.97 }} onClick={() => setTab('expenses')} style={{ fontSize: '0.72rem', color: '#818cf8', background: 'none', border: 'none', cursor: 'pointer', fontWeight: '600' }}>See all</motion.button>
+                    </div>
+                    {recentExps.length === 0 ? (
+                      <div style={{ textAlign: 'center', padding: '24px', color: '#475569', fontSize: '0.82rem' }}>No transactions yet</div>
+                    ) : (
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                        {recentExps.slice(0, 5).map(exp => {
+                          const cat = categories.find(c => c.id === exp.category);
+                          return (
+                            <div key={exp.id} style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '8px 10px', background: 'rgba(255,255,255,0.03)', borderRadius: '10px' }}>
+                              <span style={{ fontSize: '1.1rem' }}>{cat?.icon}</span>
+                              <div style={{ flex: 1, minWidth: 0 }}>
+                                <div style={{ fontSize: '0.8rem', fontWeight: '600', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{cat?.name}</div>
+                                <div style={{ fontSize: '0.68rem', color: '#64748b' }}>{exp.note || exp.date}</div>
+                              </div>
+                              <div style={{ fontSize: '0.82rem', fontWeight: '700', color: '#f1f5f9' }}>{fmt(exp.amount)}</div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                  
+                  </GlassCard>
+                </div>
               </motion.div>
             )}
 
