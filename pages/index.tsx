@@ -13,8 +13,11 @@ type AllowanceRequest = { id: string; amount: number; reason: string; status: 'p
 type RiskLevel = 'conservative' | 'moderate' | 'aggressive';
 type Demographics = { age: number; income: number; dependents: number; goal: string; occupation: string; };
 type InvestProfile = { risk: RiskLevel; demo: Demographics; answered: boolean; };
-type Tab = 'dashboard' | 'expenses' | 'budget' | 'analytics' | 'requests' | 'profile' | 'invest';
+type Tab = 'dashboard' | 'expenses' | 'budget' | 'analytics' | 'requests' | 'profile' | 'invest' | 'find' | 'ai';
 type ChatMessage = { id: string; role: 'user' | 'agent'; text: string; time: string; };
+type AIRecommendation = { id: string; category: 'goal' | 'spending' | 'invest'; title: string; body: string; options?: AIRecommendationOption[]; savings?: number; risk?: string; approved: boolean; createdAt: string; };
+type AIRecommendationOption = { name: string; cost: string; pros: string[]; cons: string[]; fit: 'great' | 'good' | 'tight'; note?: string; };
+type StockResearch = { symbol: string; name: string; price: string; change: string; summary: string; reasons: string[]; opportunities: string[]; risks: string[]; uncertainty: string; verdict: string; demoData: boolean; };
 
 const defaultCategories: Category[] = [
   { id: 'rent', name: 'Monthly Rent', icon: '🏠', color: '#6366f1', budget: 0, spent: 0 },
@@ -127,6 +130,17 @@ const Home: NextPage = () => {
   const [invProfile, setInvProfile] = useStorage<InvestProfile>(SK+'inv', {risk:'moderate',demo:{age:0,income:0,dependents:0,goal:'',occupation:''},answered:false});
   const [riskAns, setRiskAns] = useState<Array<number | undefined>>([]);
   const [demoFrm, setDemoFrm] = useState({age:'',income:'',dependents:'',goal:'',occupation:''});
+  const [findCat, setFindCat] = useState('Groceries');
+  const [findBudget, setFindBudget] = useState(50);
+  const [findResults, setFindResults] = useState<Array<{name:string;price:string;was:string;store:string;storeIcon:string;location:string;distance:string;color:string}>>([]);
+  const [aiRecs, setAiRecs] = useStorage<AIRecommendation[]>(SK+'air', []);
+  const [aiLoading, setAiLoading] = useState(false);
+  const [goalAskOpen, setGoalAskOpen] = useState(false);
+  const [goalAskText, setGoalAskText] = useState('');
+  const [spendingAskOpen, setSpendingAskOpen] = useState(false);
+  const [stockSearch, setStockSearch] = useState('');
+  const [stockResults, setStockResults] = useState<StockResearch[]>([]);
+  const [stockLoading, setStockLoading] = useState(false);
 
   const monthExps = expenses.filter(e => e.date?.startsWith(month));
   const totalSpent = monthExps.reduce((s,e) => s+e.amount, 0);
@@ -224,6 +238,136 @@ const Home: NextPage = () => {
   const saveProfile = () => { setSettings((s: any) => ({ ...s, name: profileName })); addNotif('Profile saved', 'success'); };
   const pendingReqs = reqs.filter(r => r.status === 'pending');
 
+  const genevaStores = [
+    { name: 'Migros', icon: 'M', location: 'Rive', distance: '0.8km' },
+    { name: 'Coop', icon: 'C', location: 'Jonction', distance: '1.1km' },
+    { name: 'Manor', icon: 'X', location: 'Centre', distance: '1.5km' },
+  ];
+
+  const generateDeals = () => {
+    const deals: Array<{name:string;price:string;was:string;store:string;storeIcon:string;location:string;distance:string;color:string}> = [];
+    if (findCat === 'Groceries') {
+      deals.push(
+        { name: 'Organic Bananas 1kg', price: 'CHF 1.95', was: 'CHF 2.50', store: 'Migros', storeIcon: 'M', location: 'Rive', distance: '0.8km', color: '#e53e3e' },
+        { name: 'Whole Milk 1L', price: 'CHF 1.45', was: 'CHF 1.80', store: 'Coop', storeIcon: 'C', location: 'Jonction', distance: '1.1km', color: '#2b6cb0' },
+        { name: 'Sourdough Bread', price: 'CHF 2.90', was: 'CHF 3.80', store: 'Manor', storeIcon: 'X', location: 'Centre', distance: '1.5km', color: '#d69e2e' },
+      );
+    } else if (findCat === 'Transport') {
+      deals.push(
+        { name: 'Monthly TPG Pass', price: 'CHF 85.00', was: 'CHF 95.00', store: 'TPG', storeIcon: 'T', location: 'Cornavin', distance: '0.5km', color: '#3182ce' },
+        { name: 'SBB Day Pass', price: 'CHF 52.00', was: 'CHF 73.00', store: 'SBB', storeIcon: 'S', location: 'Gare', distance: '0.9km', color: '#e53e3e' },
+      );
+    } else if (findCat === 'Utilities') {
+      deals.push(
+        { name: 'Geneva Electricity', price: 'CHF 0.18/kWh', was: 'CHF 0.22/kWh', store: 'SIG', storeIcon: 'E', location: 'Grottes', distance: '1.2km', color: '#d69e2e' },
+        { name: 'Internet 1Gbps', price: 'CHF 49.90/mo', was: 'CHF 69.90/mo', store: 'Swisscom', storeIcon: 'W', location: 'Online', distance: 'N/A', color: '#e53e3e' },
+      );
+    } else {
+      deals.push(
+        { name: 'Budget Gym', price: 'CHF 49.00/mo', was: 'CHF 89.00/mo', store: 'Peak Club', storeIcon: 'G', location: 'Acacias', distance: '2.1km', color: '#e53e3e' },
+        { name: 'Cinema Pass 8 films', price: 'CHF 99.00', was: 'CHF 140.00', store: 'Pathe', storeIcon: 'F', location: 'Praille', distance: '2.8km', color: '#2b6cb0' },
+      );
+    }
+    return deals;
+  };
+
+  const generateGoalRec = () => {
+    setAiLoading(true);
+    setGoalAskOpen(false);
+    setTimeout(() => {
+      const goal = goalAskText.toLowerCase();
+      let title = 'Goal Analysis: ' + goalAskText;
+      let body = '';
+      let savings = 0;
+      if (goal.includes('bali') || goal.includes('vacation') || goal.includes('trip')) {
+        body = 'Based on your current savings rate of CHF 450/month, a Trip to Bali (~CHF 3,000) is achievable in 7 months. Consider the 50/30/20 rule: allocate 20% (CHF ~200) to savings. Alternative: visit Swiss Alps for ~CHF 1,200 instead.';
+        savings = 200;
+      } else if (goal.includes('car') || goal.includes('vehicle')) {
+        body = 'A reliable used car in Geneva typically costs CHF 8,000-15,000. With your current rate, this would take 18-33 months. We recommend increasing monthly savings to CHF 500+ or exploring car-sharing options (Mobility Carsharing) for CHF 150/month.';
+        savings = 500;
+      } else if (goal.includes('laptop') || goal.includes('pc') || goal.includes('computer')) {
+        body = 'A solid work laptop (Lenovo ThinkPad or MacBook Air) costs CHF 1,000-1,500. At CHF 450/month savings rate, you could afford this in 3 months. Recommended: Buy refurbished from digitec.ch for ~CHF 800, saving CHF 200.';
+        savings = 150;
+      } else if (goal.includes('emergency') || goal.includes('fund')) {
+        body = 'An emergency fund should cover 3-6 months of expenses. Based on your average monthly spend, we recommend building to CHF 12,000. At CHF 450/month, this will take ~27 months. Consider automating CHF 200/month to a separate savings account.';
+        savings = 450;
+      } else {
+        body = 'This goal is achievable with proper planning. Geneva cost-of-living is high, but strategic savings can get you there. We recommend starting with CHF 300/month and increasing as your income grows.';
+        savings = 300;
+      }
+      const rec: AIRecommendation = {
+        id: randId(),
+        category: 'goal',
+        title,
+        body,
+        savings,
+        approved: false,
+        createdAt: new Date().toISOString(),
+      };
+      setAiRecs(prev => [rec, ...prev]);
+      setAiLoading(false);
+    }, 1200);
+  };
+
+  const generateSpendingRec = () => {
+    setAiLoading(true);
+    setSpendingAskOpen(false);
+    setTimeout(() => {
+      const catTotals = categories.map(c => ({ name: c.name, spent: c.spent, budget: c.budget, pct: c.budget > 0 ? (c.spent / c.budget) : 0 }));
+      const overBudget = catTotals.filter(c => c.pct > 0.9);
+      const topSpender = [...catTotals].sort((a, b) => b.spent - a.spent)[0];
+      let title = 'Spending Analysis';
+      let body = '';
+      if (overBudget.length > 0) {
+        const cats = overBudget.map(c => c.name).join(', ');
+        body = 'You are over budget in: ' + cats + '. ' + topSpender.name + ' is your highest spending category at CHF ' + topSpender.spent.toFixed(2) + ' (' + (topSpender.pct * 100).toFixed(0) + '% of budget). Consider the Geneva challenge: cancel one subscription (save ~CHF 30/month) and reduce dining out by CHF 50/month.';
+      } else {
+        body = 'Your spending is well-managed. ' + topSpender.name + ' is your top expense at CHF ' + topSpender.spent.toFixed(2) + ". You're on track for this month. Keep monitoring and consider the 50/30/20 rule: 50% needs, 30% wants, 20% savings.";
+      }
+      const rec: AIRecommendation = {
+        id: randId(),
+        category: 'spending',
+        title,
+        body,
+        approved: false,
+        createdAt: new Date().toISOString(),
+      };
+      setAiRecs(prev => [rec, ...prev]);
+      setAiLoading(false);
+    }, 1200);
+  };
+
+  const researchStock = (symbol: string) => {
+    setStockLoading(true);
+    setTimeout(() => {
+      const stocks: Record<string, StockResearch> = {
+        AAPL: { symbol: 'AAPL', name: 'Apple Inc.', price: 'CHF 178.50', change: '+1.2%', summary: 'Apple designs, manufactures, and markets smartphones, personal computers, tablets, wearables, and accessories worldwide.', reasons: ['Strong brand loyalty in Europe', 'Robust Services revenue growth', 'iPhone upgrade cycle in 2025'], opportunities: ['AI-enhanced iPhone 17 expected', 'Services subscription growth', 'India manufacturing shift'], risks: ['China market slowdown', 'Regulatory scrutiny in EU', 'High valuation (29x earnings)'], uncertainty: 'Competition from Huawei in China and Android flagship phones.', verdict: 'Strong hold for long-term Geneva investors. Buy on dips toward CHF 165.', demoData: true },
+        GOOGL: { symbol: 'GOOGL', name: 'Alphabet Inc.', price: 'CHF 141.80', change: '+0.8%', summary: 'Alphabet provides online advertising services, cloud solutions, and hardware. Google Search dominates European market.', reasons: ['Dominant search market share', 'YouTube ad revenue growth', 'Google Cloud profitability improving'], opportunities: ['Gemini AI integration across products', 'Cloud market share gains'], risks: ['EU Digital Markets Act enforcement', 'AI search disruption risk'], uncertainty: 'Regulatory breakup threats in EU.', verdict: 'Accumulate for long-term. Target CHF 160 in 18 months.', demoData: true },
+        MSFT: { symbol: 'MSFT', name: 'Microsoft Corp.', price: 'CHF 415.50', change: '+1.5%', summary: 'Microsoft develops and licenses consumer and enterprise software, with leading positions in cloud computing (Azure) and productivity.', reasons: ['Azure 2 cloud globally', 'Copilot AI integration across suite', 'GitHub enterprise growth'], opportunities: ['AI Copilot monetization', 'Gaming acquisitions value'], risks: ['Antitrust scrutiny in EU', 'OpenAI capex burden'], uncertainty: 'AI ROI timeline and open-source shift could pressure licensing.', verdict: 'Quality hold. Fair value CHF 430, wait for pullback to CHF 380.', demoData: true },
+        TSLA: { symbol: 'TSLA', name: 'Tesla Inc.', price: 'CHF 175.20', change: '-2.3%', summary: 'Tesla designs, develops, manufactures, and sells electric vehicles, and energy generation and storage systems.', reasons: ['EV market leader in premium segment', 'FSD (Full Self-Driving) progress', 'Energy storage Megapack demand'], opportunities: ['Affordable Tesla Model 2 expected', 'Robotaxi announcement potential'], risks: ['Elon Musk political involvement risk', 'Chinese EV competition (BYD)', 'Margin compression from price cuts'], uncertainty: 'Execution on autonomy promises remains uncertain.', verdict: 'Speculative position only. Max 5% of portfolio.', demoData: true },
+      };
+      const result = stocks[symbol.toUpperCase()];
+      if (result) {
+        setStockResults([result]);
+      } else {
+        setStockResults([{
+          symbol: symbol.toUpperCase(),
+          name: symbol.toUpperCase() + ' Corp.',
+          price: 'CHF --',
+          change: '--',
+          summary: 'Live data for ' + symbol + ' requires a real market data API subscription. This is simulated research for educational purposes.',
+          reasons: ['Simulated data - not financial advice'],
+          opportunities: [],
+          risks: ['Demo data only - verify with real quotes'],
+          uncertainty: 'Always consult a licensed financial advisor before investing.',
+          verdict: 'DISCLAIMER: This is simulated/student demo data. Not financial advice.',
+          demoData: true,
+        }]);
+      }
+      setStockLoading(false);
+    }, 1000);
+  };
+
   return (
     <>
       <Head>
@@ -313,7 +457,7 @@ const Home: NextPage = () => {
           <main>
             {/* TAB BAR */}
             <div style={{ display: 'flex', gap: '6px', marginBottom: '20px', background: 'rgba(255,255,255,0.04)', borderRadius: '16px', padding: '6px', border: '1px solid rgba(255,255,255,0.06)', overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
-              {([['dashboard','📊','Dashboard'],['expenses','💳','Expenses'],['budget','🎯','Budget'],['analytics','📈','Analytics'],['requests','📬','Requests'],['profile','👤','Profile'],['invest','💹','Invest']] as [Tab,string,string][]).map(([t,icon,label]) => (
+              {([['dashboard','📊','Dashboard'],['expenses','💳','Expenses'],['budget','🎯','Budget'],['analytics','📈','Analytics'],['requests','📬','Requests'],['profile','👤','Profile'],['invest','💹','Invest'],['find','🏷️','Find'],['ai','🤖','AI']] as [Tab,string,string][]).map(([t,icon,label]) => (
                 <motion.button key={t} whileHover={{ scale: 1.03 }} whileTap={{ scale: 0.97 }}
                   onClick={() => setTab(t)}
                   style={{ flex: 1, minWidth: '70px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', padding: '9px 8px', borderRadius: '12px', border: 'none', cursor: 'pointer', fontSize: '0.78rem', fontWeight: '600', transition: 'all 0.2s', background: tab === t ? 'rgba(99,102,241,0.22)' : 'transparent', color: tab === t ? '#a5b4fc' : '#475569' }}>
