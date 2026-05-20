@@ -14,6 +14,7 @@ type RiskLevel = 'conservative' | 'moderate' | 'aggressive';
 type Demographics = { age: number; income: number; dependents: number; goal: string; occupation: string; };
 type InvestProfile = { risk: RiskLevel; demo: Demographics; answered: boolean; };
 type Tab = 'dashboard' | 'expenses' | 'budget' | 'analytics' | 'requests' | 'profile' | 'invest';
+type ChatMessage = { id: string; role: 'user' | 'agent'; text: string; time: string; };
 
 const defaultCategories: Category[] = [
   { id: 'rent', name: 'Monthly Rent', icon: '🏠', color: '#6366f1', budget: 0, spent: 0 },
@@ -114,6 +115,11 @@ const Home: NextPage = () => {
   const [expenseForm, setExpenseForm] = useState({ category: 'groceries', amount: '', note: '', date: new Date().toISOString().slice(0,10) });
   const [requestForm, setRequestForm] = useState({ amount: '', reason: '' });
   const [notifOpen, setNotifOpen] = useState(false);
+  const [chatOpen, setChatOpen] = useState(false);
+  const [chatMessages, setChatMessages] = useState<ChatMessage[]>([
+    { id: '1', role: 'agent', text: '👋 Hi there! I\'m your Wealth Health assistant. How can I help you today?', time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) },
+  ]);
+  const [chatInput, setChatInput] = useState('');
   const [showStock, setShowStock] = useState(false);
   const [profileName, setProfileName] = useState(settings.name);
   
@@ -127,6 +133,30 @@ const Home: NextPage = () => {
   const moneyLeft = allowance - totalSpent;
   const safeDaily = daysLeft > 0 ? Math.max(0, moneyLeft / daysLeft) : 0;
   const unRead = notifs.filter(n => !n.read).length;
+
+  const getChatResponse = (userMsg: string): string => {
+    const msg = userMsg.toLowerCase();
+    if (msg.includes('budget') || msg.includes('allowance')) return 'Your current monthly allowance is ' + fmt(allowance) + '. You can update it anytime from the Dashboard tab! 💰';
+    if (msg.includes('spent') || msg.includes('expense')) return 'You\'ve spent ' + fmt(totalSpent) + ' this month. Your balance left is ' + fmt(moneyLeft) + '. 📊';
+    if (msg.includes('save') || msg.includes('goal')) return 'You have ' + goals.length + ' savings goals active! Check your Dashboard or Savings Goals section for progress. 🎯';
+    if (msg.includes('invest') || msg.includes('portfolio')) return 'Check out the Invest tab for your personalised investment strategy based on your risk profile! 📈';
+    if (msg.includes('category')) return 'You can set category budgets in the Budget tab. This helps track spending limits per category. 🎯';
+    if (msg.includes('help')) return 'I can help with: setting budgets 💰, tracking expenses 📊, savings goals 🎯, investment advice 📈, and more! What would you like to know?';
+    if (msg.includes('hi') || msg.includes('hello') || msg.includes('hey')) return 'Hello! 👋 How can I assist you today?';
+    if (msg.includes('thank')) return 'You\'re welcome! 😊 Is there anything else I can help you with?';
+    return 'I\'m not sure I understand. Try asking about: budgets, expenses, savings goals, or investments! I\'m here to help! 💬';
+  };
+
+  const sendChatMessage = () => {
+    if (!chatInput.trim()) return;
+    const userMsg: ChatMessage = { id: randId(), role: 'user', text: chatInput, time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) };
+    setChatMessages(prev => [...prev, userMsg]);
+    const response = getChatResponse(chatInput);
+    setTimeout(() => {
+      setChatMessages(prev => [...prev, { id: randId(), role: 'agent', text: response, time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) }]);
+    }, 600);
+    setChatInput('');
+  };
 
   useEffect(() => {
     const newCats = categories.map(c => ({
@@ -904,6 +934,93 @@ const Home: NextPage = () => {
           </motion.div>
         )}
         </div>
+        {/* CHATBOT WIDGET */}
+        <AnimatePresence>
+          {chatOpen && (
+            <motion.div
+              initial={{ opacity: 0, y: 20, scale: 0.95 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: 20, scale: 0.95 }}
+              transition={{ duration: 0.2 }}
+              style={{
+                position: 'fixed',
+                bottom: '24px',
+                right: '24px',
+                width: '380px',
+                height: '520px',
+                background: 'rgba(20,25,40,0.98)',
+                backdropFilter: 'blur(20px)',
+                WebkitBackdropFilter: 'blur(20px)',
+                border: '1px solid rgba(255,255,255,0.1)',
+                borderRadius: '20px',
+                zIndex: 500,
+                display: 'flex',
+                flexDirection: 'column',
+                boxShadow: '0 25px 80px rgba(0,0,0,0.7)',
+                overflow: 'hidden',
+              }}
+            >
+              <div style={{ padding: '16px 20px', background: 'rgba(99,102,241,0.15)', borderBottom: '1px solid rgba(255,255,255,0.08)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                  <div style={{ width: '40px', height: '40px', borderRadius: '50%', background: 'linear-gradient(135deg, #6366f1, #8b5cf6)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '1.2rem' }}>💬</div>
+                  <div>
+                    <div style={{ fontSize: '0.95rem', fontWeight: '700', color: '#f1f5f9' }}>Wealth Assistant</div>
+                    <div style={{ fontSize: '0.72rem', color: '#22c55e', display: 'flex', alignItems: 'center', gap: '4px' }}><span style={{ width: '6px', height: '6px', borderRadius: '50%', background: '#22c55e', display: 'inline-block' }} />Online</div>
+                  </div>
+                </div>
+                <button onClick={() => setChatOpen(false)} style={{ background: 'rgba(255,255,255,0.06)', border: 'none', borderRadius: '10px', padding: '8px 12px', color: '#94a3b8', cursor: 'pointer', fontSize: '0.85rem' }}>✕</button>
+              </div>
+              <div style={{ flex: 1, overflowY: 'auto', padding: '16px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                {chatMessages.map((msg) => (
+                  <div key={msg.id} style={{ display: 'flex', justifyContent: msg.role === 'user' ? 'flex-end' : 'flex-start' }}>
+                    <div style={{ maxWidth: '80%', padding: '10px 14px', borderRadius: msg.role === 'user' ? '16px 16px 4px 16px' : '16px 16px 16px 4px', background: msg.role === 'user' ? 'rgba(99,102,241,0.25)' : 'rgba(255,255,255,0.06)', border: msg.role === 'user' ? '1px solid rgba(99,102,241,0.3)' : '1px solid rgba(255,255,255,0.08)', fontSize: '0.82rem', lineHeight: '1.5', color: '#f1f5f9' }}>
+                      <div>{msg.text}</div>
+                      <div style={{ fontSize: '0.65rem', color: '#64748b', marginTop: '4px', textAlign: msg.role === 'user' ? 'right' : 'left' }}>{msg.time}</div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+              <div style={{ padding: '8px 16px', display: 'flex', gap: '8px', flexWrap: 'wrap', borderTop: '1px solid rgba(255,255,255,0.05)' }}>
+                {['Budget Help', 'Track Expense', 'Savings Goals', 'Investment'].map((action) => (
+                  <button key={action} onClick={() => setChatInput(action)} style={{ padding: '5px 12px', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '20px', color: '#94a3b8', fontSize: '0.72rem', cursor: 'pointer' }}>{action}</button>
+                ))}
+              </div>
+              <div style={{ padding: '12px 16px', borderTop: '1px solid rgba(255,255,255,0.08)', display: 'flex', gap: '10px' }}>
+                <input value={chatInput} onChange={(e) => setChatInput(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && sendChatMessage()} placeholder="Type a message..." style={{ flex: 1, background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.12)', borderRadius: '12px', padding: '10px 14px', color: '#f1f5f9', fontSize: '0.85rem', outline: 'none' }} />
+                <motion.button whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }} onClick={sendChatMessage} style={{ padding: '10px 16px', background: 'rgba(99,102,241,0.25)', border: '1px solid rgba(99,102,241,0.4)', borderRadius: '12px', color: '#a5b4fc', cursor: 'pointer', fontSize: '0.85rem', fontWeight: '700' }}>Send</motion.button>
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+        {/* Chat Floating Button */}
+        <motion.button
+          initial={{ scale: 0 }}
+          animate={{ scale: 1 }}
+          whileHover={{ scale: 1.1 }}
+          whileTap={{ scale: 0.9 }}
+          onClick={() => setChatOpen(true)}
+          style={{
+            position: 'fixed',
+            bottom: '24px',
+            right: chatOpen ? '424px' : '24px',
+            width: '60px',
+            height: '60px',
+            borderRadius: '50%',
+            background: 'linear-gradient(135deg, #6366f1, #8b5cf6)',
+            border: 'none',
+            cursor: 'pointer',
+            zIndex: 499,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            fontSize: '1.5rem',
+            boxShadow: '0 8px 32px rgba(99,102,241,0.4)',
+            transition: 'right 0.3s ease',
+          }}
+        >
+          💬
+        </motion.button>
       </div>
     </>
   );
